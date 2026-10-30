@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Binance bot</title>
+  <link rel="icon" href="/favicon.svg">
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <h1>Binance bot</h1>
+    <div id="engine" class="muted small"></div>
+    <div class="spacer"></div>
+    <div id="streams" class="small"></div>
+    <button id="kill" type="button"></button>
+    <button id="logout" type="button" class="ghost">Log out</button>
+  </header>
+
+  <div id="banner" class="banner" role="alert" hidden></div>
+
+  <main class="layout">
+    <section class="panel bots">
+      <div class="panel-head">
+        <h2>Bots</h2>
+        <button id="new-bot" type="button" class="primary">New bot</button>
+      </div>
+      <div id="bot-list"></div>
+    </section>
+
+    <section class="panel detail" id="detail">
+      <p class="muted">Select a bot, or create one.</p>
+    </section>
+
+    <section class="panel feed">
+      <div class="panel-head"><h2>Activity</h2></div>
+      <ol id="events" class="events"></ol>
+    </section>
+  </main>
+
+  <dialog id="bot-dialog">
+    <form id="bot-form" method="dialog">
+      <h2 id="bot-form-title">New bot</h2>
+      <details class="import">
+        <summary>Paste settings from the Strategy Lab</summary>
+        <p class="muted small">Paste the run's request JSON (it holds symbol, timeframe, strategy and costs). The form fills in; check it before saving.</p>
+        <textarea id="import-json" rows="5" spellcheck="false"></textarea>
+        <button type="button" id="import-apply">Fill the form</button>
+      </details>
+      <fieldset>
+        <legend>Bot</legend>
+        <label>Name <input name="name" required maxlength="60"></label>
+        <label>Account
+          <select name="account"><option value="paper">Paper (simulated fills)</option><option value="demo">Binance demo</option><option value="live">Live</option></select>
+        </label>
+        <label>Market
+          <select name="market"><option value="futures">Futures (USD-M perpetual)</option><option value="spot">Spot</option></select>
+        </label>
+        <label>Symbol <input name="symbol" required placeholder="BTCUSDT" pattern="[A-Za-z0-9]{2,20}"></label>
+        <label>Timeframe <select name="timeframe"></select></label>
+        <label>Warm-up bars <input name="warmupBars" type="number" min="50" max="20000" step="1" value="1000"></label>
+      </fieldset>
+      <fieldset>
+        <legend>Strategy</legend>
+        <label>Strategy <select name="kind"></select></label>
+        <label data-for="ma">MA type <select name="maType"></select></label>
+        <label data-for="fastslow">Fast <input name="fast" type="number" min="1" step="1"></label>
+        <label data-for="fastslow">Slow <input name="slow" type="number" min="1" step="1"></label>
+        <label data-for="perp">Direction
+          <select name="perpDirection"><option value="both">Long &amp; Short</option><option value="long_only">Long only</option><option value="short_only">Short only</option></select>
+        </label>
+        <label>Take profit % <input name="takeProfitPct" type="number" min="0" step="any" placeholder="off"></label>
+        <label>Stop loss % <input name="stopLossPct" type="number" min="0" step="any" placeholder="off"></label>
+        <label>Exit after bars <input name="exitAfterBars" type="number" min="0" step="1" placeholder="off"></label>
+        <label class="check"><input name="exitOnSignal" type="checkbox" checked> Exit on opposite signal</label>
+        <label>Stop trading below % of capital <input name="stopTradingBelowPct" type="number" min="0" step="any" placeholder="off"></label>
+        <label>Max loss streak <input name="maxLossStreak" type="number" min="0" step="1" placeholder="off"></label>
+      </fieldset>
+      <fieldset>
+        <legend>Money</legend>
+        <label>Capital (USDT) <input name="capital" type="number" min="0" step="any" required value="1000"></label>
+        <label data-for="perp">Leverage <input name="leverage" type="number" min="1" max="125" step="any" value="1"></label>
+        <label>Taker fee % <input name="takerFeePercent" type="number" min="0" step="any" value="0.05"></label>
+        <label data-for="perp">Maker fee % <input name="makerFeePercent" type="number" min="0" step="any" value="0.02"></label>
+        <label data-for="perp">Maintenance margin % <input name="maintenanceMarginPercent" type="number" min="0" step="any" value="0.4"></label>
+      </fieldset>
+      <fieldset>
+        <legend>Risk limits (halt the bot)</legend>
+        <label>Max daily loss % <input name="maxDailyLossPct" type="number" min="0" max="100" step="any" placeholder="off"></label>
+        <label>Max drawdown % <input name="maxDrawdownPct" type="number" min="0" max="100" step="any" placeholder="off"></label>
+        <label>Order failures in a row <input name="maxConsecutiveFailures" type="number" min="1" max="100" step="1" value="5"></label>
+        <label class="check"><input name="flattenOnHalt" type="checkbox"> Close the position when halted</label>
+      </fieldset>
+      <p id="bot-form-error" class="error" role="alert" hidden></p>
+      <div class="actions">
+        <button type="button" id="bot-cancel" class="ghost">Cancel</button>
+        <button type="submit" class="primary">Save</button>
+      </div>
+    </form>
+  </dialog>
+
+  <script src="/app.js" type="module"></script>
+</body>
+</html>

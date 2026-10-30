@@ -1,0 +1,19 @@
+{
+  "name": "binance-bot",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Binance spot and USD-M futures bot that trades bist-charts strategies with the bist-charts engine",
+  "type": "module",
+  "engines": {
+    "node": ">=22.13"
+  },
+  "scripts": {
+    "start": "node --disable-warning=ExperimentalWarning src/main.js",
+    "cli": "node --disable-warning=ExperimentalWarning src/cli.js",
+    "test": "node --disable-warning=ExperimentalWarning --test --test-concurrency=1 test/*.test.js",
+    "sync-engine": "node scripts/sync-engine.mjs"
+  },
+  "devDependencies": {
+    "esbuild": "0.24.2"
+  }
+}

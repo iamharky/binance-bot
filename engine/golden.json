@@ -1,0 +1,45 @@
+{
+  "commit": "084097e066479075e177a7ed2c7f69e3ce8ac4fd",
+  "cases": {
+    "btc kama 9/21 perp both": {
+      "trades": 176,
+      "finalEquity": 9974.08,
+      "sha256": "48ca207d9dfc866fb8c0136197bb842d1eb89c4a9cc8cbfdbf57019e77e0a7a2"
+    },
+    "btc kama 84/115 perp both": {
+      "trades": 62,
+      "finalEquity": 8972.31,
+      "sha256": "2a05e876d537d2f3ca7fa73f18612bd9c5e874b5acec027196bf160aedd7ef50"
+    },
+    "btc kama 9/21 perp 2.5x tp3 sl2": {
+      "trades": 176,
+      "finalEquity": 10235.17,
+      "sha256": "89fb31d216c3cd612de3ada94606c32ff0dded8c7e0f1334b1bd11c0601547ae"
+    },
+    "btc ema 20/50 spot": {
+      "trades": 60,
+      "finalEquity": 10110.27,
+      "sha256": "5fbfd3d7b2169548ab2f26f9bb5fc11ff46e978ebaa4e79b11b73a228cbfd5c5"
+    },
+    "btc willy spot": {
+      "trades": 250,
+      "finalEquity": 9462.61,
+      "sha256": "0b97174935aab64376f65e0fd400479849c4bcb9fe3a627a102bd7b611d19be7"
+    },
+    "eth supertrend adx perp long": {
+      "trades": 66,
+      "finalEquity": 10131.96,
+      "sha256": "0be30b7a79de5d2464bb1781ab9d1264986b1a579fe6e86c3fc27d2e73dae3fd"
+    },
+    "eth donchian perp 3x hold 24": {
+      "trades": 246,
+      "finalEquity": 6802.21,
+      "sha256": "db031ddfb160b01cc964eaf26c3e03ec7213865868b02cd04e9c8a790c36af3a"
+    },
+    "eth ttm squeeze perp short": {
+      "trades": 328,
+      "finalEquity": 8747.88,
+      "sha256": "28120e58f82b5f1852ba5a7d805f4bf2ba9c0c84fd8982e8ee0a9d0a68117eb8"
+    }
+  }
+}

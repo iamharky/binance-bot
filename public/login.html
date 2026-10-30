@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Binance bot · Log in</title>
+  <link rel="icon" href="/favicon.svg">
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body class="login">
+  <main class="login-card">
+    <h1>Binance bot</h1>
+    <form id="login-form">
+      <label for="password">Password</label>
+      <input id="password" name="password" type="password" autocomplete="current-password" required autofocus>
+      <button type="submit" class="primary">Log in</button>
+      <p id="login-error" class="error" role="alert" hidden></p>
+    </form>
+    <p id="no-password" class="muted" hidden>No password is set yet. On the machine running the bot, run <code>npm run cli -- set-password</code>, then reload this page.</p>
+  </main>
+  <script src="/login.js" type="module"></script>
+</body>
+</html>
