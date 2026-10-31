@@ -3,6 +3,7 @@ import { execFileSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { engine, ENGINE_INFO, parseLabSettings, TIMEFRAMES } from "../engine.js";
+import { BOT_PRESETS } from "../presets.js";
 import { compareWithEngine, tradeStats } from "../stats.js";
 import { HttpError } from "./http.js";
 
@@ -89,6 +90,7 @@ export function buildRoutes({ store, manager, auth, events, config, streams }) {
         accounts: ["paper", "demo", "live"],
         markets: ["spot", "futures"],
         maxLeverage: engine.MAX_PERP_LEVERAGE,
+        presets: BOT_PRESETS,
       }),
     },
     { method: "GET", path: "/api/engine", handler: () => ({ ok: true, engine: engineStatus(config.bistChartsDir) }) },

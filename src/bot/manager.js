@@ -15,7 +15,7 @@ const ACCOUNTS = ["paper", "demo", "live"];
 const ACTIVE = new Set(["running", "halted"]);
 
 export class BotManager {
-  constructor({ store, events, risk, market, feed, config, fetchImpl = globalThis.fetch, now = () => Date.now() }) {
+  constructor({ store, events, risk, market, feed, config, fetchImpl = globalThis.fetch, now = () => Date.now(), setTimeoutImpl = setTimeout, clearTimeoutImpl = clearTimeout }) {
     this.store = store;
     this.events = events;
     this.risk = risk;
@@ -24,6 +24,7 @@ export class BotManager {
     this.config = config;
     this.fetch = fetchImpl;
     this.now = now;
+    this.timers = { setTimeoutImpl, clearTimeoutImpl };
     this.runners = new Map();
     this.restClients = new Map();
     feed.on("bar", (b) => this.onBar(b));
@@ -73,6 +74,14 @@ export class BotManager {
     }
     const warmupBars = input.warmupBars ?? existing?.warmup_bars ?? 1000;
     if (!Number.isInteger(warmupBars) || warmupBars < 50 || warmupBars > 20_000) throw new ConfigError("warmupBars must be an integer from 50 to 20000", "warmupBars");
+    // Limit entries are worked on a futures account (paper simulates one); spot bots enter at market.
+    if (lab.strategy.entryLimit && market !== "futures") throw new ConfigError("Limit entries trade on futures bots only", "strategy.entryLimit");
+    // The volatility knobs read whole UTC days of the bars since the anchor: the warm-up must hold them and the day before.
+    if (lab.strategy.volTargetPct !== undefined || lab.strategy.volCapPct !== undefined) {
+      const days = (lab.strategy.volLookbackDays ?? 14) + 2;
+      const need = Math.ceil((days * 86_400) / TIMEFRAMES[timeframe].sec);
+      if (warmupBars < need) throw new ConfigError(`warmupBars must cover the ${days} days the volatility estimate reads: at least ${need} bars of ${timeframe}`, "warmupBars");
+    }
     // The market decides spot or perp; the stored strategy keeps only what the owner chose.
     const { positionMode: _mode, ...stored } = lab.strategy;
     return { name, account, market, symbol, timeframe, strategy: stored, execution, risk, warmupBars, lab };
@@ -209,7 +218,7 @@ export class BotManager {
 
   async exchangeFor(bot, info) {
     const lab = parseLabSettings(bot);
-    if (bot.account === "paper") return new PaperExchange({ takerFeeRate: lab.execution.takerFeeRate, now: this.now });
+    if (bot.account === "paper") return new PaperExchange({ takerFeeRate: lab.execution.takerFeeRate, makerFeeRate: lab.execution.makerFeeRate, now: this.now });
     const rest = this.rest(bot.market, bot.account);
     if (!rest.hasKeys) throw new ConfigError(`No ${bot.account} API key: set BINANCE_${bot.account.toUpperCase()}_API_KEY and _SECRET in .env`);
     if (bot.market === "futures") return new FuturesExchange({ rest, quoteAsset: info.quoteAsset ?? info.marginAsset ?? "USDT" });
@@ -225,7 +234,7 @@ export class BotManager {
     const info = await this.market.symbolInfo(bot.market, bot.symbol);
     const venue = venueRules(bot.market, info);
     const exchange = await this.exchangeFor(bot, info);
-    runner = new BotRunner({ bot, store: this.store, events: this.events, risk: this.risk, exchange, market: this.market, feed: this.feed, venue, now: this.now });
+    runner = new BotRunner({ bot, store: this.store, events: this.events, risk: this.risk, exchange, market: this.market, feed: this.feed, venue, now: this.now, ...this.timers });
     this.runners.set(bot.id, runner);
     return runner;
   }
@@ -240,5 +249,10 @@ export class BotManager {
 
   timeframes() {
     return Object.keys(TIMEFRAMES);
+  }
+
+  /** Stops the bots' limit-order polls (the app is closing). */
+  close() {
+    for (const runner of this.runners.values()) runner.stopPoll();
   }
 }

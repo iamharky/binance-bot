@@ -23,13 +23,14 @@ export function createApp(config, { fetchImpl = globalThis.fetch, WebSocketImpl 
     s.on("status", (st) => events.emit(st.connected ? "info" : "warn", "stream", `${m} market stream ${st.connected ? "connected" : "disconnected"}${st.error ? `: ${st.error}` : ""}`));
   }
   const feed = new CandleFeed({ store, market, streams, events, now, setTimeoutImpl, clearTimeoutImpl });
-  const manager = new BotManager({ store, events, risk, market, feed, config, fetchImpl, now });
+  const manager = new BotManager({ store, events, risk, market, feed, config, fetchImpl, now, setTimeoutImpl, clearTimeoutImpl });
   const auth = new Auth(store, { secureCookie: config.cookieSecure, now });
   const server = createHttpServer({ auth, routes: buildRoutes({ store, manager, auth, events, config, streams }), sse: sseHandler(events), trustProxy: config.trustProxy === true });
   return {
     store, events, risk, market, streams, feed, manager, auth, server,
     async close() {
       feed.close();
+      manager.close();
       const closed = new Promise((r) => server.close(() => r()));
       server.closeAllConnections?.();
       await closed;

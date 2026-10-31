@@ -41,6 +41,10 @@
   <dialog id="bot-dialog">
     <form id="bot-form" method="dialog">
       <h2 id="bot-form-title">New bot</h2>
+      <label class="preset">Preset
+        <select id="preset-select"><option value="">None (fill the form yourself)</option></select>
+      </label>
+      <p id="preset-description" class="muted small" hidden></p>
       <details class="import">
         <summary>Paste settings from the Strategy Lab</summary>
         <p class="muted small">Paste the run's request JSON (it holds symbol, timeframe, strategy and costs). The form fills in; check it before saving.</p>
@@ -75,6 +79,22 @@
         <label class="check"><input name="exitOnSignal" type="checkbox" checked> Exit on opposite signal</label>
         <label>Stop trading below % of capital <input name="stopTradingBelowPct" type="number" min="0" step="any" placeholder="off"></label>
         <label>Max loss streak <input name="maxLossStreak" type="number" min="0" step="1" placeholder="off"></label>
+      </fieldset>
+      <fieldset>
+        <legend>Sizing and entry</legend>
+        <label>Volatility target % a day <input name="volTargetPct" type="number" min="0" step="any" placeholder="off: all-in"></label>
+        <label>Volatility days <input name="volLookbackDays" type="number" min="2" max="60" step="1" placeholder="14"></label>
+        <label>No signals at volatility % <input name="volCapPct" type="number" min="0" step="any" placeholder="off"></label>
+        <label data-for="cross">Early turn: bars <input name="etLookbackBars" type="number" min="1" step="1" placeholder="off"></label>
+        <label data-for="cross">Early at slope &le; <input name="etEarlyMax" type="number" step="any"></label>
+        <label data-for="cross">Late at slope &gt; <input name="etLateMin" type="number" step="any"></label>
+        <label data-for="cross">Early size &times; <input name="etEarlyMult" type="number" min="0" step="any"></label>
+        <label data-for="cross">Late size &times; <input name="etLateMult" type="number" min="0" step="any"></label>
+        <label data-for="perp">Limit entry: bars <input name="elWaitBars" type="number" min="0" max="50" step="1" placeholder="off: market"></label>
+        <label data-for="perp">Limit offset % <input name="elOffsetPct" type="number" min="0" max="10" step="any" placeholder="0"></label>
+        <label data-for="perp">If unfilled
+          <select name="elFallback"><option value="market">Enter at market</option><option value="skip">Skip the entry</option></select>
+        </label>
       </fieldset>
       <fieldset>
         <legend>Money</legend>

@@ -9,6 +9,11 @@ import { ROOT } from "./config.js";
 
 export { engine };
 
+// The engine's instrument registry falls back to bist-charts' market cache for ids outside its catalogs (PYTHUSDT is
+// one). The bot has no such cache: an empty in-memory one makes those lookups find nothing, so the id's shape decides
+// (BINANCE: is a USD-M perpetual, CRYPTO: Binance spot) instead of the engine refusing to open a cache file.
+process.env.BIST_MARKET_CACHE_DB ??= ":memory:";
+
 export const ENGINE_INFO = JSON.parse(readFileSync(join(ROOT, "engine/engine.json"), "utf8"));
 
 /** Timeframes the bot trades: bist-charts id -> Binance kline interval and bar length in seconds. */
@@ -142,12 +147,16 @@ export function protectiveLevels(lab, rules, side, fill) {
 }
 
 /**
- * The engine's own all-in size for a fill: spot spends the wallet, a perp sizes margin + entry fee to the wallet
- * at the leverage (execution-core openAt). `fraction` (< 1) keeps a buffer for the live fill price moving.
+ * The engine's size for a fill (execution-core openAt): spot spends `sizeFraction` of the wallet, a perp sizes margin
+ * + entry fee to that share at the leverage; `sizeFraction` is the decision's (volatility sizing, else 1 = all-in).
+ * `fraction` (< 1) keeps a buffer for the live fill price moving and only binds when it is below `sizeFraction`.
+ * `feeRate`: the fee the fill pays (the maker rate for a limit entry), else the taker rate.
  */
-export function entryQty(lab, rules, wallet, price, fraction = 1) {
+export function entryQty(lab, rules, wallet, price, fraction = 1, sizeFraction = 1, feeRate = null) {
   const ex = lab.execution;
-  const cash = Math.max(0, wallet * fraction);
-  if (ex.positionMode === "spot") return rules.calculateLotSize(cash, price, ex.takerFeeRate);
-  return rules.calculateLotSize(engine.perpSizingCash(cash, ex.leverage, ex.takerFeeRate), price, ex.takerFeeRate);
+  const share = Math.min(fraction, sizeFraction >= 1 ? 1 : sizeFraction);
+  const cash = Math.max(0, wallet * share);
+  const fee = feeRate ?? ex.takerFeeRate;
+  if (ex.positionMode === "spot") return rules.calculateLotSize(cash, price, fee);
+  return rules.calculateLotSize(engine.perpSizingCash(cash, ex.leverage, fee), price, fee);
 }

@@ -1,5 +1,6 @@
-// USD-M futures account adapter (one-way mode, isolated or cross margin). Entries and exits are MARKET orders;
-// the stop-loss and take-profit rest on the exchange as conditional algo orders (STOP_MARKET /
+// USD-M futures account adapter (one-way mode, isolated or cross margin). Entries and exits are MARKET orders, or
+// for a strategy with limit entries a GTC LIMIT entry the runner works and cancels (a price the market has already
+// passed fills at once, as the engine fills an open through its limit); the stop-loss and take-profit rest on the exchange as conditional algo orders (STOP_MARKET /
 // TAKE_PROFIT_MARKET, closePosition=true), so a bot that is down never leaves a position without them. Binance
 // moved conditional orders off /fapi/v1/order to /fapi/v1/algoOrder (error -4120 on the old endpoint).
 //
@@ -75,6 +76,52 @@ export class FuturesExchange {
       fee,
       time: Number(order.updateTime ?? order.transactTime ?? Date.now()),
     };
+  }
+
+  /** GTC LIMIT order (an entry); returns {orderId, status, executedQty, avgPrice}. A lost answer is looked up by client id. */
+  async limitOrder({ symbol, side, qty, price, clientId }) {
+    const params = { symbol, side, type: "LIMIT", timeInForce: "GTC", quantity: qty, price, newClientOrderId: clientId, newOrderRespType: "RESULT" };
+    let order;
+    try {
+      order = await this.rest.signed("POST", "/fapi/v1/order", params);
+    } catch (e) {
+      if (!(e instanceof BinanceError) || !e.transient) throw e;
+      order = await this.findOrder(symbol, clientId);
+      if (order === null) throw e;
+    }
+    return { orderId: String(order.orderId), status: order.status, executedQty: Number(order.executedQty ?? 0), avgPrice: Number(order.avgPrice) || null };
+  }
+
+  /** An order's state by client id: status, executed qty, average price, fees of its fills, last update; UNKNOWN when gone. */
+  async orderState(symbol, clientId) {
+    const o = await this.findOrder(symbol, clientId);
+    if (o === null) return { status: "UNKNOWN", executedQty: 0 };
+    return this.withFees(symbol, o);
+  }
+
+  /** Cancels an order by client id; returns its final state (an order that filled first comes back FILLED). */
+  async cancelOrder(symbol, clientId) {
+    try {
+      const o = await this.rest.signed("DELETE", "/fapi/v1/order", { symbol, origClientOrderId: clientId });
+      return this.withFees(symbol, o);
+    } catch (e) {
+      // -2011: unknown order (already filled or cancelled): its state says which.
+      if (!(e instanceof BinanceError) || (e.code !== -2011 && e.code !== -2013 && !e.transient)) throw e;
+      return this.orderState(symbol, clientId);
+    }
+  }
+
+  async withFees(symbol, o) {
+    const executedQty = Number(o.executedQty ?? 0);
+    let fee = 0;
+    if (executedQty > 0) {
+      const fills = await this.rest.signed("GET", "/fapi/v1/userTrades", { symbol, orderId: o.orderId });
+      for (const f of Array.isArray(fills) ? fills : []) {
+        const c = Number(f.commission);
+        fee += f.commissionAsset === this.quoteAsset ? c : c * Number(f.price);
+      }
+    }
+    return { orderId: String(o.orderId), status: o.status, executedQty, avgPrice: Number(o.avgPrice) || null, fee, time: Number(o.updateTime ?? o.time ?? Date.now()) };
   }
 
   async findOrder(symbol, clientId) {

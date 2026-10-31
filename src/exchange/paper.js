@@ -1,15 +1,19 @@
 // Paper account: the same calls as the real adapters, filled locally. Market orders fill at the reference price
 // the runner sets (the close the decision was made on, which is the next bar's open to within a tick on a 24x7
 // market) and pay the taker fee; resting stops and targets fill when a later bar reaches them, at the level (or
-// at the open when the bar gaps through it), stop first when one bar reaches both.
+// at the open when the bar gaps through it), stop first when one bar reaches both. A resting limit entry fills as
+// the engine's does (execution-core.ts "Limit entries"): at the open of a bar that opens at or through it, else at
+// its price on a bar that trades there, with the maker fee, stamped with that bar's open time.
 export class PaperExchange {
-  constructor({ takerFeeRate = 0.0005, now = () => Date.now() } = {}) {
+  constructor({ takerFeeRate = 0.0005, makerFeeRate = 0.0002, now = () => Date.now() } = {}) {
     this.kind = "paper";
     this.takerFeeRate = takerFeeRate;
+    this.makerFeeRate = makerFeeRate;
     this.now = now;
     this.refPrice = new Map();
     this.protective = new Map();
     this.exits = new Map();
+    this.limits = new Map();
     this.seq = 0;
   }
 
@@ -45,8 +49,38 @@ export class PaperExchange {
     this.protective.delete(symbol);
   }
 
-  /** Checks a closed bar against the resting stop and target of the symbol's open trade. */
+  /** A resting limit order (an entry): filled by a later bar in onBar. */
+  async limitOrder({ symbol, side, qty, price, clientId }) {
+    const order = { orderId: `paper-${++this.seq}`, clientId, side, qty, price, status: "NEW", executedQty: 0, avgPrice: null, fee: 0, time: null };
+    this.limits.set(clientId, { symbol, ...order });
+    return { orderId: order.orderId, status: "NEW", executedQty: 0, avgPrice: null };
+  }
+
+  async orderState(_symbol, clientId) {
+    const o = this.limits.get(clientId);
+    if (!o) return { status: "UNKNOWN", executedQty: 0 };
+    return { orderId: o.orderId, status: o.status, executedQty: o.executedQty, avgPrice: o.avgPrice, fee: o.fee, time: o.time };
+  }
+
+  async cancelOrder(symbol, clientId) {
+    const o = this.limits.get(clientId);
+    if (o && o.status === "NEW") o.status = "CANCELED";
+    return this.orderState(symbol, clientId);
+  }
+
+  /** Checks a closed bar against the resting limit entries, and the resting stop and target of the symbol's open trade. */
   onBar(symbol, bar, closeMs) {
+    for (const o of this.limits.values()) {
+      if (o.symbol !== symbol || o.status !== "NEW") continue;
+      const buy = o.side === "BUY";
+      const through = buy ? bar.open <= o.price : bar.open >= o.price;
+      if (!through && !(buy ? bar.low <= o.price : bar.high >= o.price)) continue;
+      o.status = "FILLED";
+      o.executedQty = o.qty;
+      o.avgPrice = through ? bar.open : o.price;
+      o.fee = o.qty * o.avgPrice * this.makerFeeRate;
+      o.time = bar.time * 1000;
+    }
     const p = this.protective.get(symbol);
     if (!p) return null;
     const long = p.dir === 1;

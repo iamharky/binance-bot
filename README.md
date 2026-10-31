@@ -25,11 +25,24 @@ missed, but never jump into a trade the engine opened while the bot was down; se
 
 ## Make a bot
 
-**New bot** on the web page. The quickest way is **Paste settings from the Strategy Lab**: paste the run's
+**New bot** on the web page. A **Preset** (the menu at the top of the form) fills every field with a strategy the
+bist-charts research settled on; you choose the account (paper by default) and the capital, then save. Presets live
+in `src/presets.js`:
+
+- **PYTHUSDT 15m: EMA 60/75 h drift** (bist-charts `research/pyth-ma-crossover/PYTH-15M-STRATEGY.md`, in Turkish
+  `PYTH-15M-STRATEJI.md`): futures, 15m, EMA 240 / 300 crossings both ways, out after 168 bars (42 h) or at the
+  opposite crossing, 20 % stop; size 3 % a day over the 14-day mean daily range (at most the capital, 1x), 1.5x for
+  an early crossing and 0.5x for a late one; no signal while that range is 12 % or more; entry by a limit at the
+  signal close for 2 bars, then market; taker 0.05 %, maker 0.02 %; warm-up 3,000 bars. The engine runs it as a
+  Lab preset that reproduces the study's simulator trade for trade (bist-charts
+  `research/pyth-ma-crossover/scripts/s13-engine-parity.mts`).
+
+Another quick way is **Paste settings from the Strategy Lab**: paste the run's
 request JSON (`{"symbol": "BINANCE:BTCUSDT", "timeframe": "15m", "strategy": {...}, ...}`) and the form fills
 in: `BINANCE:` ids become futures bots, `CRYPTO:` ids spot bots. Or fill the form by hand: symbol, timeframe,
 strategy and its parameters (for example KAMA 84/115, Long & Short), take profit / stop loss / exit after bars,
-capital, leverage, fees.
+sizing and entry (volatility target, its days and cap, early-turn sizing for MA crossovers, a limit entry with its
+bars and fallback), capital, leverage, fees.
 
 Accounts:
 
@@ -55,6 +68,21 @@ Every closed candle (the bot subscribes to Binance's live kline stream and backf
 4. Right after an entry fill, the stop-loss and take-profit go **on the exchange** at the engine's levels from
    the real fill price (futures: conditional algo orders with closePosition; spot: one OCO sell). If they cannot
    be placed, the position is closed at once rather than left unprotected.
+
+**Volatility sizing** (`volTargetPct`, `volLookbackDays`, `volCapPct`, `earlyTurn`): the engine reads each UTC day's
+true range from the bars since the bot's anchor and says how big an entry is (`sizeFraction`, a share of the
+capital); the bot sizes its order on that share of its wallet. The warm-up must hold the days the estimate reads
+plus two (the form refuses less). Signals while the range is at or above the cap are ignored by the engine.
+
+**Limit entries** (`entryLimit`, futures bots): the engine's entry is a limit at the signal close (moved by
+`offsetPct`) working for `waitBars` bars. The bot sends it as a GTC LIMIT (a price the market already passed fills
+at once), sized with the maker fee, and keeps it while the engine works the same order; a demo or live bot checks
+it every 5 s, so the stop goes on the exchange within seconds of a fill. When the window ends unfilled the order is
+cancelled and the engine's market fallback enters at the next open (or, if the engine's bar traded at the limit and
+the exchange did not fill, the bot enters at market then). A new signal of the other side cancels it, as the engine
+does; a part already filled is kept as the trade (and closed if the engine no longer wants that side). Stopping the
+bot cancels its working order; a manual open waits until it has filled or ended. The paper account fills a limit
+as the engine does: at the open of a bar that opens through it, else at its price when a bar trades there.
 
 Decisions use **live** Binance market data whatever the account, so a demo bot decides on the same candles the Lab
 backtests. Demo fills happen on the demo exchange, whose prices are close to live but not identical.
@@ -93,7 +121,9 @@ npm install          # once: esbuild, used only by sync-engine
 npm run sync-engine  # bundles bist-charts at its last commit (HEAD); --worktree takes uncommitted files too
 ```
 
-It prints the golden strategies whose trades changed with the new engine. `engine/engine.json` records the commit;
+It prints the golden strategies whose trades changed with the new engine. The bundle's instrument lookups run on an
+empty in-memory cache (`BIST_MARKET_CACHE_DB=:memory:`, set in `src/engine.js`), so a Binance symbol outside
+bist-charts' catalogs (PYTHUSDT) resolves by its id: `BINANCE:` is a USD-M perpetual, `CRYPTO:` spot. `engine/engine.json` records the commit;
 the page shows it, and `GET /api/engine` lists newer bist-charts commits that touch the engine. Restart the bot
 after a sync; running bots keep trading on the engine they started with until then.
 
@@ -111,10 +141,14 @@ npm test
 - `engine`: the bundle is the one `engine.json` names and still trades the golden strategies identically; settings
   are refused with bist-charts' messages.
 - `api`: login, throttling, the request guard and a whole bot lifecycle through the HTTP API.
+- `pyth-preset`: the PYTHUSDT preset carries every rule and makes a valid bot (a short warm-up and spot limit
+  entries are refused); a paper bot on 2,800 real PYTHUSDT 15m bars with its rules on faster periods makes the
+  engine's trades (entry kind, bar, price and size); on the simulated futures account limit entries rest at the
+  engine's price, fill with the stop on and fall back to market; a stopped bot cancels its working order.
 
 ## Files
 
-- `src/`: `main.js` (server), `app.js` (wiring), `engine.js` (the only door to the engine), `bot/` (runner,
+- `src/`: `main.js` (server), `app.js` (wiring), `engine.js` (the only door to the engine), `presets.js`, `bot/` (runner,
   manager, candle feed, risk), `exchange/` (futures, spot, paper), `binance/` (REST, market data, streams),
   `server/` (HTTP, API, login), `db.js` (SQLite), `cli.js`.
 - `public/`: the web page (plain JavaScript).

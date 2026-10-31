@@ -98,6 +98,9 @@ function strategyText(bot) {
   if (bot.market === "futures") out += ` · ${{ both: "L&S", long_only: "long", short_only: "short" }[s.perpDirection ?? "both"]}`;
   if (s.takeProfitPct) out += ` · TP ${s.takeProfitPct}%`;
   if (s.stopLossPct) out += ` · SL ${s.stopLossPct}%`;
+  if (s.volTargetPct) out += ` · vol ${s.volTargetPct}%/day${s.earlyTurn ? " early/late" : ""}`;
+  if (s.volCapPct) out += ` · cap ${s.volCapPct}%`;
+  if (s.entryLimit) out += ` · limit ${s.entryLimit.waitBars} bars`;
   if (s.exitAfterBars) out += ` · ${s.exitAfterBars} bars`;
   return out;
 }
@@ -370,9 +373,10 @@ function syncFormVisibility() {
   const kind = F.kind.value;
   const meta = state.meta.strategies.find((s) => s.kind === kind);
   const perp = F.market.value === "futures";
+  const cross = kind === "ma_cross" || kind === "sma_cross";
   for (const el of form.querySelectorAll("[data-for]")) {
     const f = el.dataset.for;
-    el.hidden = (f === "ma" && !meta?.usesMaType) || (f === "fastslow" && !meta?.usesFastSlow) || (f === "perp" && !perp);
+    el.hidden = (f === "ma" && !meta?.usesMaType) || (f === "fastslow" && !meta?.usesFastSlow) || (f === "perp" && !perp) || (f === "cross" && !cross);
   }
 }
 
@@ -397,18 +401,63 @@ function setForm(v) {
   syncFormVisibility();
 }
 
+/** Bot settings ({name, account, market, symbol, timeframe, warmupBars, strategy, execution, risk}) as form values. */
+function formValues(v) {
+  const { earlyTurn, entryLimit, ...strategy } = v.strategy ?? {};
+  return {
+    name: v.name,
+    account: v.account,
+    market: v.market,
+    symbol: v.symbol,
+    timeframe: v.timeframe,
+    warmupBars: v.warmupBars,
+    ...strategy,
+    volTargetPct: strategy.volTargetPct ?? null,
+    volLookbackDays: strategy.volLookbackDays ?? null,
+    volCapPct: strategy.volCapPct ?? null,
+    etLookbackBars: earlyTurn?.lookbackBars ?? null,
+    etEarlyMax: earlyTurn?.earlyMax ?? null,
+    etLateMin: earlyTurn?.lateMin ?? null,
+    etEarlyMult: earlyTurn?.earlyMult ?? null,
+    etLateMult: earlyTurn?.lateMult ?? null,
+    elWaitBars: entryLimit?.waitBars ?? null,
+    elOffsetPct: entryLimit?.offsetPct ?? null,
+    elFallback: entryLimit?.fallback ?? "market",
+    ...(v.execution ?? {}),
+    ...(v.risk ?? {}),
+  };
+}
+
 function openForm(bot = null) {
   editing = bot;
   form.reset();
   $("#bot-form-error").hidden = true;
+  $("#preset-select").value = "";
+  $("#preset-description").hidden = true;
+  $("#preset-select").closest("label").hidden = bot !== null;
   $("#bot-form-title").textContent = bot ? `Edit ${bot.name}` : "New bot";
   if (bot) {
-    setForm({ name: bot.name, account: bot.account, market: bot.market, symbol: bot.symbol, timeframe: bot.timeframe, warmupBars: bot.warmup_bars, ...bot.strategy, ...bot.execution, ...bot.risk });
+    setForm(formValues({ ...bot, warmupBars: bot.warmup_bars }));
   } else {
     setForm({ timeframe: "15m", kind: "ma_cross", maType: "KAMA", fast: 9, slow: 21 });
   }
   dialog.showModal();
 }
+
+// A preset fills the whole form (the owner still checks the account and the capital, then saves).
+$("#preset-select").addEventListener("change", () => {
+  const p = (state.meta.presets ?? []).find((x) => x.id === $("#preset-select").value);
+  const desc = $("#preset-description");
+  if (!p) {
+    desc.hidden = true;
+    return;
+  }
+  form.reset();
+  $("#preset-select").value = p.id;
+  setForm(formValues(p.settings));
+  desc.textContent = `${p.description} Source: ${p.source}.`;
+  desc.hidden = false;
+});
 
 const numOrNull = (v) => (v === "" || v === null || v === undefined ? null : Number(v));
 
@@ -423,10 +472,24 @@ function readForm() {
     strategy.slow = numOrNull(f.slow.value);
   }
   if (perp) strategy.perpDirection = f.perpDirection.value;
-  for (const k of ["takeProfitPct", "stopLossPct", "exitAfterBars", "stopTradingBelowPct", "maxLossStreak"]) {
+  for (const k of ["takeProfitPct", "stopLossPct", "exitAfterBars", "stopTradingBelowPct", "maxLossStreak", "volTargetPct", "volCapPct"]) {
     const v = numOrNull(f[k].value);
     if (v !== null && v !== 0) strategy[k] = v;
   }
+  const days = numOrNull(f.volLookbackDays.value);
+  if (days !== null && (strategy.volTargetPct !== undefined || strategy.volCapPct !== undefined)) strategy.volLookbackDays = days;
+  const cross = f.kind.value === "ma_cross" || f.kind.value === "sma_cross";
+  if (cross && numOrNull(f.etLookbackBars.value) !== null) {
+    strategy.earlyTurn = {
+      lookbackBars: numOrNull(f.etLookbackBars.value),
+      earlyMax: numOrNull(f.etEarlyMax.value),
+      lateMin: numOrNull(f.etLateMin.value),
+      earlyMult: numOrNull(f.etEarlyMult.value),
+      lateMult: numOrNull(f.etLateMult.value),
+    };
+  }
+  const wait = numOrNull(f.elWaitBars.value);
+  if (perp && wait !== null && wait > 0) strategy.entryLimit = { offsetPct: numOrNull(f.elOffsetPct.value) ?? 0, waitBars: wait, fallback: f.elFallback.value };
   const execution = { capital: numOrNull(f.capital.value), takerFeePercent: numOrNull(f.takerFeePercent.value) };
   if (perp) {
     execution.leverage = numOrNull(f.leverage.value) ?? 1;
@@ -485,6 +548,7 @@ $("#import-apply").addEventListener("click", () => {
     if (s.kind === "pine") throw new Error("Pine strategies are not supported by the bot yet; use a preset strategy");
     const market = m[1] === "BINANCE" ? "futures" : "spot";
     setForm({
+      ...formValues({ strategy: s }),
       market,
       symbol: m[2],
       timeframe: req.timeframe,
@@ -561,6 +625,7 @@ state.meta = await api("GET", "/api/meta");
 fillSelect(F.timeframe, state.meta.timeframes.map((t) => [t, t]));
 fillSelect(F.kind, state.meta.strategies.map((s) => [s.kind, s.defaultLabel]));
 fillSelect(F.maType, state.meta.maTypes.map((t) => [t, t]));
+fillSelect($("#preset-select"), [["", "None (fill the form yourself)"], ...(state.meta.presets ?? []).map((p) => [p.id, p.name])]);
 await refresh();
 await loadEvents();
 connectStream();

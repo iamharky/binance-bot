@@ -54,6 +54,8 @@ const MIGRATIONS = [
    CREATE TABLE events (id INTEGER PRIMARY KEY, time INTEGER NOT NULL, level TEXT NOT NULL, bot_id INTEGER,
      type TEXT NOT NULL, message TEXT NOT NULL, data TEXT);
    CREATE INDEX events_time ON events (time);`,
+  // The limit entry order a bot keeps working on the exchange (runner.js "Limit entries"), JSON or null.
+  `ALTER TABLE bots ADD COLUMN working_entry TEXT;`,
 ];
 
 export function openDb(dataDir) {
@@ -94,7 +96,7 @@ const P = (s) => (s == null ? null : JSON.parse(s));
 
 function botFromRow(r) {
   if (!r) return null;
-  return { ...r, strategy: P(r.strategy), execution: P(r.execution), risk: P(r.risk) };
+  return { ...r, strategy: P(r.strategy), execution: P(r.execution), risk: P(r.risk), working_entry: P(r.working_entry ?? null) };
 }
 
 /** Every query the app makes, in one place. */
@@ -145,7 +147,7 @@ export class Store {
     const vals = [];
     for (const [k, v] of Object.entries(fields)) {
       cols.push(`${k} = ?`);
-      vals.push(k === "strategy" || k === "execution" || k === "risk" ? J(v) : v);
+      vals.push(k === "strategy" || k === "execution" || k === "risk" || (k === "working_entry" && v !== null) ? J(v) : v);
     }
     cols.push("updated_at = ?");
     vals.push(now);

@@ -44,7 +44,8 @@ const json = (body, status = 200) => ({
 /**
  * fake Binance. `bars` maps "BTCUSDT" -> engine bars (15m); both markets serve the same bars.
  * The futures account: one-way positions per symbol, MARKET fills at `this.price(symbol)`, algo stop/target orders
- * that `triggerStops(symbol, bar)` fires, fees at 0.05 %.
+ * that `triggerStops(symbol, bar)` fires, fees at 0.05 %; GTC LIMIT orders rest (a marketable one fills at once) until
+ * `fillLimits(symbol, bar)` fills them as a bar trades there (maker 0.02 %) or DELETE cancels them.
  */
 export class FakeBinance {
   constructor({ clock, bars, intervalSec = 900, balance = 100_000 }) {
@@ -135,6 +136,13 @@ export class FakeBinance {
         const o = [...this.orders.values()].find((x) => x.clientOrderId === p.origClientOrderId);
         return o ? json(o) : json({ code: -2013, msg: "Order does not exist." }, 400);
       }
+      case "DELETE /fapi/v1/order": {
+        const o = [...this.orders.values()].find((x) => x.clientOrderId === p.origClientOrderId);
+        if (!o || o.status !== "NEW") return json({ code: -2011, msg: "Unknown order sent." }, 400);
+        o.status = "CANCELED";
+        o.updateTime = this.clock.ms;
+        return json(o);
+      }
       case "GET /fapi/v1/userTrades": {
         let rows = this.fills.filter((f) => f.symbol === p.symbol);
         if (p.orderId) rows = rows.filter((f) => String(f.orderId) === String(p.orderId));
@@ -169,6 +177,15 @@ export class FakeBinance {
     const qty = Number(p.quantity);
     const price = this.price(p.symbol);
     const dir = p.side === "BUY" ? 1 : -1;
+    if (p.type === "LIMIT") {
+      const limit = Number(p.price);
+      const id = this.nextOrderId++;
+      const o = { orderId: id, clientOrderId: p.newClientOrderId, symbol: p.symbol, type: "LIMIT", status: "NEW", price: p.price, origQty: String(qty), avgPrice: "0", executedQty: "0", updateTime: this.clock.ms, side: p.side };
+      this.orders.set(id, o);
+      // A price the market has already passed fills at once at the market (taker).
+      if (dir === 1 ? price <= limit : price >= limit) this.fillOrder(o, price, 0.0005);
+      return json(o);
+    }
     const pos = this.positions.get(p.symbol) ?? { amt: 0, entry: 0 };
     if (p.reduceOnly === "true" && (pos.amt === 0 || Math.sign(pos.amt) === dir)) return json({ code: -2022, msg: "ReduceOnly Order is rejected." }, 400);
     this.fill(p.symbol, p.side, qty, price);
@@ -179,13 +196,31 @@ export class FakeBinance {
     return json(o);
   }
 
-  fill(symbol, side, qty, price) {
+  /** Fills resting LIMIT orders the bar trades at: at the open when it opens through them, else at their price (maker). */
+  fillLimits(symbol, bar) {
+    for (const o of this.orders.values()) {
+      if (o.symbol !== symbol || o.type !== "LIMIT" || o.status !== "NEW") continue;
+      const limit = Number(o.price);
+      const buy = o.side === "BUY";
+      const through = buy ? bar.open <= limit : bar.open >= limit;
+      if (!through && !(buy ? bar.low <= limit : bar.high >= limit)) continue;
+      this.fillOrder(o, through ? bar.open : limit, 0.0002, bar.time * 1000);
+    }
+  }
+
+  fillOrder(o, price, feeRate, time = this.clock.ms) {
+    this.fill(o.symbol, o.side, Number(o.origQty), price, feeRate, time);
+    this.fills[this.fills.length - 1].orderId = o.orderId;
+    Object.assign(o, { status: "FILLED", avgPrice: String(price), executedQty: o.origQty, updateTime: time });
+  }
+
+  fill(symbol, side, qty, price, feeRate = 0.0005, time = this.clock.ms) {
     const dir = side === "BUY" ? 1 : -1;
     const pos = this.positions.get(symbol) ?? { amt: 0, entry: 0 };
     const amt = Math.round((pos.amt + dir * qty) * 1e8) / 1e8;
     if (amt === 0) this.positions.delete(symbol);
     else this.positions.set(symbol, { amt, entry: Math.sign(amt) === Math.sign(pos.amt) && pos.amt !== 0 ? pos.entry : price });
-    this.fills.push({ symbol, side, qty: String(qty), price: String(price), commission: String(qty * price * 0.0005), commissionAsset: "USDT", time: this.clock.ms });
+    this.fills.push({ symbol, side, qty: String(qty), price: String(price), commission: String(qty * price * feeRate), commissionAsset: "USDT", time });
   }
 
   /** Fires resting algo orders a bar reaches (stop first), closing the position at the trigger price. */

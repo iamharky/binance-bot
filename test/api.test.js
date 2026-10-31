@@ -63,6 +63,8 @@ test("bot lifecycle: refuse bad settings, create, start, open and close by hand,
   const { app, call, clock, fake } = await boot();
   app.auth.setPassword("correct horse battery");
   await call("POST", "/api/login", { password: "correct horse battery" });
+  const meta = (await call("GET", "/api/meta")).json;
+  assert.ok(meta.presets.some((p) => p.id === "pythusdt-15m-ema-drift" && p.settings.symbol === "PYTHUSDT" && p.settings.strategy.entryLimit), "the meta lists the PYTHUSDT preset");
   const bad = await call("POST", "/api/bots", { name: "x", account: "paper", market: "futures", symbol: "BTCUSDT", timeframe: "15m", strategy: { kind: "ma_cross", fast: 50, slow: 20 }, execution: { capital: 1000, takerFeePercent: 0.05 } });
   assert.equal(bad.status, 400);
   assert.match(bad.json.error, /Fast period must be less than slow/);
