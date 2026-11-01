@@ -28,6 +28,9 @@ const sign = (side) => (side === "short" ? -1 : 1);
 const sideOf = (dir) => (dir === -1 ? "short" : "long");
 const iso = (sec) => new Date(sec * 1000).toISOString();
 const WORKING = new Set(["NEW", "PARTIALLY_FILLED"]);
+/** How often and how far apart a funding-reading strategy re-asks for the settlement at its close (runner.fundingEvents). */
+const FUNDING_CLOSE_TRIES = 9;
+const FUNDING_CLOSE_WAIT_MS = 15_000;
 
 export class BotRunner {
   /**
@@ -52,6 +55,7 @@ export class BotRunner {
     this.queue = Promise.resolve();
     this.funding = null;
     this.fundingFetchedAt = 0;
+    this.fundingTo = 0;
     this.load(bot);
   }
 
@@ -143,16 +147,39 @@ export class BotRunner {
     this.log("warn", "bot_halted", `${this.bot.name} halted: ${reason}`);
   }
 
+  /**
+   * The funding settlements from the anchor to this bar's close. The replay's P&L reads them, refreshed hourly; a
+   * strategy whose signals read them (funding_dip) needs every settlement up to the close: they are fetched for each
+   * close, and while the one at the close itself (every USD-M perpetual settles at 00:00 UTC, a daily close) is not
+   * yet published the fetch is retried FUNDING_CLOSE_TRIES times FUNDING_CLOSE_WAIT_MS apart, then the bot decides on
+   * what there is and says so.
+   */
   async fundingEvents(barTime) {
     if (this.bot.market !== "futures") return null;
-    if (this.funding !== null && this.now() - this.fundingFetchedAt < 3600 * 1000) return this.funding;
-    try {
-      this.funding = await this.market.funding(this.bot.symbol, this.bot.anchor_time, barTime + this.tf.sec);
-      this.fundingFetchedAt = this.now();
-    } catch (e) {
-      this.log("warn", "funding_unavailable", `Funding history unavailable, the replay runs with what it has: ${e.message}`);
+    const to = barTime + this.tf.sec;
+    const signals = this.lab.strategy.kind === "funding_dip";
+    if (!signals && this.funding !== null && this.now() - this.fundingFetchedAt < 3600 * 1000) return this.funding;
+    if (signals && this.funding !== null && this.fundingTo >= to && this.coversClose(to)) return this.funding;
+    for (let attempt = 1; ; attempt++) {
+      try {
+        this.funding = await this.market.funding(this.bot.symbol, this.bot.anchor_time, to);
+        this.fundingFetchedAt = this.now();
+        this.fundingTo = to;
+      } catch (e) {
+        this.log("warn", "funding_unavailable", `Funding history unavailable, the replay runs with what it has: ${e.message}`);
+        return this.funding;
+      }
+      if (!signals || this.coversClose(to)) return this.funding;
+      if (attempt >= FUNDING_CLOSE_TRIES) break;
+      await new Promise((resolve) => this.setTimeout(resolve, FUNDING_CLOSE_WAIT_MS));
     }
+    this.log("warn", "funding_close_missing", `The funding settlement at ${iso(to)} is not published yet; deciding on the settlements before it`);
     return this.funding;
+  }
+
+  coversClose(to) {
+    const f = this.funding;
+    return f !== null && f.length > 0 && f[f.length - 1].time >= to;
   }
 
   /** A closed bar arrived for this bot's market, symbol and timeframe. */
@@ -611,8 +638,19 @@ export function floorToStep(qty, stepSize) {
   return Number((units * step).toFixed(decimals));
 }
 
-/** A price on the exchange tick (a decimal string or number) without binary noise, so it is sent as Binance prints it. */
+/**
+ * A price on the exchange tick (a decimal string or number) without binary noise, so it is sent as Binance prints it:
+ * cut to the tick's decimals (85120.9 on a 0.10 tick, where 851209 * 0.1 is 85120.90000000001, a price Binance refuses).
+ */
 export function roundToTick(price, tickSize) {
   const tick = Number(tickSize);
-  return Number((Math.round(price / tick) * tick).toFixed(12));
+  return Number((Math.round(price / tick) * tick).toFixed(decimalsOf(tickSize)));
+}
+
+/** Decimals of a tick or step ("0.10" -> 1, "0.0000100" -> 5, 1e-7 -> 7). */
+function decimalsOf(x) {
+  const text = typeof x === "string" ? x.trim() : String(x);
+  const exp = /e-(\d+)$/i.exec(text);
+  if (exp) return Number(exp[1]) + ((text.split("e")[0].split(".")[1] ?? "").length);
+  return (text.split(".")[1] ?? "").replace(/0+$/, "").length;
 }

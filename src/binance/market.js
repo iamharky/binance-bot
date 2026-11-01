@@ -59,12 +59,16 @@ export class MarketData {
     return entry;
   }
 
-  /** USD-M funding settlements in [fromSec, toSec] as engine events {time (s), rate, markPrice?}. */
+  /**
+   * USD-M funding settlements in [fromSec, toSec] as engine events {time (s), rate, markPrice?}. Binance stamps a
+   * settlement a few milliseconds after its second (fundingTime 1793548800006), so the request reaches 999 ms past
+   * toSec and an event's time is its second: the settlement at toSec itself is never cut off.
+   */
   async funding(symbol, fromSec, toSec) {
     const out = [];
     let start = fromSec * 1000;
     for (let guard = 0; guard < 200; guard++) {
-      const rows = await this.rest.futures.publicGet("/fapi/v1/fundingRate", { symbol, startTime: start, endTime: toSec * 1000, limit: 1000 });
+      const rows = await this.rest.futures.publicGet("/fapi/v1/fundingRate", { symbol, startTime: start, endTime: toSec * 1000 + 999, limit: 1000 });
       if (!Array.isArray(rows) || rows.length === 0) break;
       for (const r of rows) {
         const ms = Number(r.fundingTime);
@@ -72,6 +76,7 @@ export class MarketData {
         const mark = Number(r.markPrice);
         if (!Number.isFinite(ms) || !Number.isFinite(rate)) continue;
         const ev = { time: Math.floor(ms / 1000), rate };
+        if (ev.time > toSec) continue;
         if (Number.isFinite(mark) && mark > 0) ev.markPrice = mark;
         if (out.length === 0 || ev.time > out[out.length - 1].time) out.push(ev);
       }

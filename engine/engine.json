@@ -1,11 +1,11 @@
 {
   "source": "bist-charts",
-  "commit": "6e58d58eef214247fc7d085c50281d147c6b8b44",
-  "commitDate": "2026-10-31T21:54:06+03:00",
+  "commit": "1a791e2488fa775bd3171fc0ae5788508a0cb211",
+  "commitDate": "2026-11-01T23:33:13+03:00",
   "worktree": false,
   "dirtyFiles": [],
-  "builtAt": "2026-10-31T18:54:16.781Z",
-  "bundleSha256": "2397c8cf89c272988d71a84df7aafafbba36bf8600f3c7d2e72eb2250c28342c",
+  "builtAt": "2026-11-01T20:33:20.486Z",
+  "bundleSha256": "7fc13fbead1b8ddb22c2291a44ec7ffa85e67c49ff6f8728000822af0b6f7046",
   "inputs": [
     "engine/entry.ts",
     "src/lib/bist-extra.ts",

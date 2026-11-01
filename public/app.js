@@ -95,6 +95,7 @@ function strategyText(bot) {
   const s = bot.strategy;
   const meta = state.meta?.strategies.find((x) => x.kind === s.kind);
   let out = s.kind === "ma_cross" ? `${s.maType ?? "EMA"} ${s.fast}/${s.slow}` : meta?.usesFastSlow ? `${meta.defaultLabel.split(" (")[0]} ${s.fast}/${s.slow}` : meta?.defaultLabel.split(" (")[0] ?? s.kind;
+  if (meta?.params) out += ` ${meta.params.map((p) => s[p.key]).join("/")}`;
   if (bot.market === "futures") out += ` · ${{ both: "L&S", long_only: "long", short_only: "short" }[s.perpDirection ?? "both"]}`;
   if (s.takeProfitPct) out += ` · TP ${s.takeProfitPct}%`;
   if (s.stopLossPct) out += ` · SL ${s.stopLossPct}%`;
@@ -378,6 +379,12 @@ function syncFormVisibility() {
     const f = el.dataset.for;
     el.hidden = (f === "ma" && !meta?.usesMaType) || (f === "fastslow" && !meta?.usesFastSlow) || (f === "perp" && !perp) || (f === "cross" && !cross);
   }
+  // A daily rule's own parameters (bist-charts' catalog lists them with their labels).
+  for (const el of form.querySelectorAll("[data-param]")) {
+    const p = meta?.params?.find((x) => x.key === el.dataset.param);
+    el.hidden = !p;
+    if (p) el.querySelector("[data-param-label]").textContent = p.label;
+  }
 }
 
 F.kind.addEventListener("change", () => {
@@ -387,6 +394,8 @@ F.kind.addEventListener("change", () => {
     F.slow.value = meta.defaultSlow;
   }
   if (meta?.usesMaType) F.maType.value = meta.defaultMaType;
+  for (const p of meta?.params ?? []) F[p.key].value = p.defaultValue;
+  if (meta?.daily) F.timeframe.value = "1D";
   syncFormVisibility();
 });
 F.market.addEventListener("change", syncFormVisibility);
@@ -415,6 +424,8 @@ function formValues(v) {
     volTargetPct: strategy.volTargetPct ?? null,
     volLookbackDays: strategy.volLookbackDays ?? null,
     volCapPct: strategy.volCapPct ?? null,
+    volMeasure: strategy.volMeasure ?? "range",
+    volBrake: strategy.volBrake === true,
     etLookbackBars: earlyTurn?.lookbackBars ?? null,
     etEarlyMax: earlyTurn?.earlyMax ?? null,
     etLateMin: earlyTurn?.lateMin ?? null,
@@ -472,12 +483,19 @@ function readForm() {
     strategy.slow = numOrNull(f.slow.value);
   }
   if (perp) strategy.perpDirection = f.perpDirection.value;
+  for (const p of meta?.params ?? []) {
+    const v = numOrNull(f[p.key].value);
+    if (v !== null) strategy[p.key] = v;
+  }
   for (const k of ["takeProfitPct", "stopLossPct", "exitAfterBars", "stopTradingBelowPct", "maxLossStreak", "volTargetPct", "volCapPct"]) {
     const v = numOrNull(f[k].value);
     if (v !== null && v !== 0) strategy[k] = v;
   }
   const days = numOrNull(f.volLookbackDays.value);
-  if (days !== null && (strategy.volTargetPct !== undefined || strategy.volCapPct !== undefined)) strategy.volLookbackDays = days;
+  const vol = strategy.volTargetPct !== undefined || strategy.volCapPct !== undefined;
+  if (days !== null && vol) strategy.volLookbackDays = days;
+  if (vol && f.volMeasure.value === "stdev") strategy.volMeasure = "stdev";
+  if (strategy.volMeasure === "stdev" && strategy.volTargetPct !== undefined && f.volBrake.checked) strategy.volBrake = true;
   const cross = f.kind.value === "ma_cross" || f.kind.value === "sma_cross";
   if (cross && numOrNull(f.etLookbackBars.value) !== null) {
     strategy.earlyTurn = {
@@ -545,6 +563,7 @@ $("#import-apply").addEventListener("click", () => {
     const m = /^(BINANCE|CRYPTO):([A-Z0-9]+)$/.exec(String(req.symbol ?? ""));
     if (!m) throw new Error("The request's symbol must be BINANCE:<pair> (futures) or CRYPTO:<pair> (spot)");
     const s = req.strategy ?? {};
+    const daily = Object.fromEntries((state.meta.strategies.find((x) => x.kind === s.kind)?.params ?? []).map((p) => [p.key, s[p.key] ?? p.defaultValue]));
     if (s.kind === "pine") throw new Error("Pine strategies are not supported by the bot yet; use a preset strategy");
     const market = m[1] === "BINANCE" ? "futures" : "spot";
     setForm({
@@ -564,6 +583,7 @@ $("#import-apply").addEventListener("click", () => {
       exitOnSignal: s.exitOnSignal ?? true,
       stopTradingBelowPct: s.stopTradingBelowPct ?? null,
       maxLossStreak: s.maxLossStreak ?? null,
+      ...daily,
       capital: req.initialCapital,
       takerFeePercent: req.takerFeePercent ?? req.commissionPercent,
       makerFeePercent: req.makerFeePercent,

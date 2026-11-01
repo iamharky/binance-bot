@@ -73,6 +73,11 @@
         <label data-for="perp">Direction
           <select name="perpDirection"><option value="both">Long &amp; Short</option><option value="long_only">Long only</option><option value="short_only">Short only</option></select>
         </label>
+        <label data-param="lookbackDays"><span data-param-label>Days</span> <input name="lookbackDays" type="number" min="1" max="365" step="1"></label>
+        <label data-param="thresholdZ"><span data-param-label>Threshold (z)</span> <input name="thresholdZ" type="number" min="0" max="5" step="any"></label>
+        <label data-param="fundingDays"><span data-param-label>Funding mean (days)</span> <input name="fundingDays" type="number" min="1" max="60" step="1"></label>
+        <label data-param="rankDays"><span data-param-label>Rank history (days)</span> <input name="rankDays" type="number" min="30" max="730" step="1"></label>
+        <label data-param="bandPct"><span data-param-label>Band (% at each end)</span> <input name="bandPct" type="number" min="1" max="49" step="any"></label>
         <label>Take profit % <input name="takeProfitPct" type="number" min="0" step="any" placeholder="off"></label>
         <label>Stop loss % <input name="stopLossPct" type="number" min="0" step="any" placeholder="off"></label>
         <label>Exit after bars <input name="exitAfterBars" type="number" min="0" step="1" placeholder="off"></label>
@@ -85,6 +90,10 @@
         <label>Volatility target % a day <input name="volTargetPct" type="number" min="0" step="any" placeholder="off: all-in"></label>
         <label>Volatility days <input name="volLookbackDays" type="number" min="2" max="60" step="1" placeholder="14"></label>
         <label>No signals at volatility % <input name="volCapPct" type="number" min="0" step="any" placeholder="off"></label>
+        <label>Volatility measure
+          <select name="volMeasure"><option value="range">Mean daily range</option><option value="stdev">Std of daily returns</option></select>
+        </label>
+        <label class="check"><input name="volBrake" type="checkbox"> Brake: median volatility so far / now</label>
         <label data-for="cross">Early turn: bars <input name="etLookbackBars" type="number" min="1" step="1" placeholder="off"></label>
         <label data-for="cross">Early at slope &le; <input name="etEarlyMax" type="number" step="any"></label>
         <label data-for="cross">Late at slope &gt; <input name="etLateMin" type="number" step="any"></label>

@@ -12,6 +12,12 @@ export function loadBars(name) {
   return raw.candles.map(([time, open, high, low, close, volume]) => ({ time, open, high, low, close, volume }));
 }
 
+/** Funding settlements of a fixture as Binance's /fapi/v1/fundingRate rows ({fundingTime ms, fundingRate, markPrice?}). */
+export function loadFunding(name) {
+  const raw = JSON.parse(readFileSync(join(ROOT, "test/fixtures", name), "utf8"));
+  return raw.funding.map(([ms, rate, mark]) => ({ fundingTime: ms, fundingRate: String(rate), ...(mark !== undefined ? { markPrice: String(mark) } : {}) }));
+}
+
 export class Clock {
   constructor(ms) {
     this.ms = ms;
@@ -42,15 +48,17 @@ const json = (body, status = 200) => ({
 });
 
 /**
- * fake Binance. `bars` maps "BTCUSDT" -> engine bars (15m); both markets serve the same bars.
+ * fake Binance. `bars` maps "BTCUSDT" -> engine bars (15m); both markets serve the same bars. `funding` maps a symbol to
+ * its settlement rows (loadFunding); /fapi/v1/fundingRate serves those in [startTime, endTime] already settled.
  * The futures account: one-way positions per symbol, MARKET fills at `this.price(symbol)`, algo stop/target orders
  * that `triggerStops(symbol, bar)` fires, fees at 0.05 %; GTC LIMIT orders rest (a marketable one fills at once) until
  * `fillLimits(symbol, bar)` fills them as a bar trades there (maker 0.02 %) or DELETE cancels them.
  */
 export class FakeBinance {
-  constructor({ clock, bars, intervalSec = 900, balance = 100_000 }) {
+  constructor({ clock, bars, intervalSec = 900, balance = 100_000, funding = {} }) {
     this.clock = clock;
     this.bars = bars;
+    this.funding = funding;
     this.intervalSec = intervalSec;
     this.balance = balance;
     this.positions = new Map();
@@ -106,8 +114,12 @@ export class FakeBinance {
         const rows = this.bars[p.symbol].filter((b) => b.time >= start && b.time <= nowSec).slice(0, limit);
         return json(rows.map((b) => [b.time * 1000, String(b.open), String(b.high), String(b.low), String(b.close), String(b.volume), (b.time + this.intervalSec) * 1000 - 1]));
       }
-      case "GET /fapi/v1/fundingRate":
-        return json([]);
+      case "GET /fapi/v1/fundingRate": {
+        const rows = (this.funding[p.symbol] ?? []).filter(
+          (f) => f.fundingTime >= Number(p.startTime ?? 0) && f.fundingTime <= Number(p.endTime ?? Infinity) && f.fundingTime <= this.clock.ms,
+        );
+        return json(rows.slice(0, Number(p.limit ?? 100)));
+      }
       case "GET /fapi/v1/ticker/price":
       case "GET /api/v3/ticker/price":
         return json({ symbol: p.symbol, price: String(this.price(p.symbol)) });

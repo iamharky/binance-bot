@@ -2,7 +2,8 @@
 // from the candle feed to the bots that trade them.
 //
 // One bot per account, market and symbol may be active (running or halted): on futures the exchange nets one
-// position per symbol, and on spot two bots would sell each other's coins.
+// position per symbol, and on spot two bots would sell each other's coins. Paper bots are exempt: each keeps its
+// own simulated position, so several strategies (the parts of a group) can run side by side on one symbol.
 import { BinanceRest } from "../binance/rest.js";
 import { ConfigError, parseLabSettings, TIMEFRAMES, venueRules } from "../engine.js";
 import { FuturesExchange } from "../exchange/futures.js";
@@ -12,6 +13,17 @@ import { BotRunner } from "./runner.js";
 import { parseRisk } from "./risk.js";
 
 const ACCOUNTS = ["paper", "demo", "live"];
+
+/**
+ * The daily bars a daily rule reads before its first decision (bist-charts strategies.ts): the 30-day volatility
+ * (31 closes) and, for tsmom and sma_filter, lookbackDays + 1 closes; funding_dip's rank needs rankDays + fundingDays
+ * days of funding. Null for the other kinds.
+ */
+function dailyRuleWarmup(s) {
+  if (s.kind === "tsmom" || s.kind === "sma_filter") return Math.max(31, s.lookbackDays + 1) + 1;
+  if (s.kind === "funding_dip") return Math.max(31, s.rankDays + s.fundingDays) + 1;
+  return null;
+}
 const ACTIVE = new Set(["running", "halted"]);
 
 export class BotManager {
@@ -82,6 +94,10 @@ export class BotManager {
       const need = Math.ceil((days * 86_400) / TIMEFRAMES[timeframe].sec);
       if (warmupBars < need) throw new ConfigError(`warmupBars must cover the ${days} days the volatility estimate reads: at least ${need} bars of ${timeframe}`, "warmupBars");
     }
+    // A daily rule (1D bars, bist-charts' parser refuses others) decides once its 30-day volatility and its own window
+    // exist: the warm-up must hold them, or the bot would wait months for its first decision.
+    const need = dailyRuleWarmup(lab.strategy);
+    if (need !== null && warmupBars < need) throw new ConfigError(`warmupBars must cover the ${need} days ${lab.strategy.kind} reads before its first decision`, "warmupBars");
     // The market decides spot or perp; the stored strategy keeps only what the owner chose.
     const { positionMode: _mode, ...stored } = lab.strategy;
     return { name, account, market, symbol, timeframe, strategy: stored, execution, risk, warmupBars, lab };
@@ -131,7 +147,7 @@ export class BotManager {
     if (bot.account === "live" && !this.config.liveTradingEnabled) {
       throw new ConfigError("Live trading is off. Set LIVE_TRADING_ENABLED=1 in .env and restart to allow live bots");
     }
-    for (const other of this.store.listBots()) {
+    for (const other of bot.account === "paper" ? [] : this.store.listBots()) {
       if (other.id !== id && ACTIVE.has(other.status) && other.account === bot.account && other.market === bot.market && other.symbol === bot.symbol) {
         throw new ConfigError(`${other.name} already trades ${bot.symbol} on the ${bot.account} ${bot.market} account`);
       }

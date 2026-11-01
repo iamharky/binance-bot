@@ -36,6 +36,23 @@ in `src/presets.js`:
   signal close for 2 bars, then market; taker 0.05 %, maker 0.02 %; warm-up 3,000 bars. The engine runs it as a
   Lab preset that reproduces the study's simulator trade for trade (bist-charts
   `research/pyth-ma-crossover/scripts/s13-engine-parity.mts`).
+- **BTCUSDT 1D: 14-day momentum (long)** (bist-charts `research/btc-perp/BTC-RAPOR.md`): futures, 1D, long while the
+  14-day log return is at least 0.25 of the 30-day daily volatility times sqrt(14), flat otherwise; size 2 % a day over
+  that volatility times the brake (the median volatility so far over today's); a day's limit at the close, then market;
+  market exits; warm-up 2,600 days (BTC's perpetual history, so the brake's median is the study's).
+- **BTCUSDT 1D: buy when funding is low (long)**: long while the day's funding is in the lowest 20 % of the last 180
+  days, flat otherwise; all in; a day's limit at the close, placed again at each close while the rule holds; market
+  exits; warm-up 400 days. The bot reads the settlements up to each close (the one at 00:00 UTC included).
+- **The BTCUSDT trend group**, three presets meant to run side by side with a third of the capital each: **F1** (15m,
+  EMA 360 / 1080 = 90 / 270 h, both ways, 20 % stop, the PYTH preset's 3 % / 14-day range size, 12 % cap and 2-bar
+  limit entry; warm-up 10,000 bars), **F2** (1D, long while the 14-day return is positive, 3 % / 30-day volatility, a
+  day's limit then market) and **F17** (1D, long while the close is above its 50-day average, 3 % / 30-day volatility,
+  market orders).
+
+  The engine runs these as its daily rules (`tsmom`, `sma_filter`, `funding_dip`, 1D bars) and F1 as an `ma_cross`;
+  with market orders they make the studies' trades exactly (bist-charts `research/btc-perp/scripts/s45-engine-parity.mts`).
+  The studies exited by limits, the engine exits at market, so the presets earn somewhat less than the studies'
+  figures (momentum 2020-2026: +742 % against +783 %).
 
 Another quick way is **Paste settings from the Strategy Lab**: paste the run's
 request JSON (`{"symbol": "BINANCE:BTCUSDT", "timeframe": "15m", "strategy": {...}, ...}`) and the form fills
@@ -52,7 +69,8 @@ Accounts:
 
 A new bot is stopped; press **Start**. Futures bots need the account in **One-way Mode** (they refuse to start in
 Hedge Mode) and use isolated margin unless a bot says otherwise. One active bot per account, market and symbol (Binance nets one futures
-position per symbol, and two spot bots would sell each other's coins).
+position per symbol, and two spot bots would sell each other's coins); paper bots are exempt, each keeps its own
+simulated position, so the parts of a group (the BTC trend group) can run side by side on paper.
 
 ## How a bot trades
 
@@ -145,6 +163,11 @@ npm test
   entries are refused); a paper bot on 2,800 real PYTHUSDT 15m bars with its rules on faster periods makes the
   engine's trades (entry kind, bar, price and size); on the simulated futures account limit entries rest at the
   engine's price, fill with the stop on and fall back to market; a stopped bot cancels its working order.
+- `btc-presets`: the BTCUSDT presets carry their studies' rules and make valid bots (a short warm-up and a daily rule
+  on 15m are refused); a paper bot of each daily preset fed 1,398 real BTCUSDT days (2023-2026) makes the engine's
+  trades (side, entry kind, day, price, size, exit); on the simulated futures account the day limits reach Binance on
+  the 0.10 tick; paper bots share a symbol where demo refuses a second; funding settlements stamped milliseconds late
+  stay in the window.
 
 ## Files
 
